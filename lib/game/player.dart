@@ -20,9 +20,6 @@ import 'audio_player_component.dart';
 // This component class represents the player character in game.
 class Player extends SpriteComponent
     with CollisionCallbacks, HasGameReference<SpacescapeGame>, KeyboardHandler {
-  // Player joystick
-  JoystickComponent joystick;
-
   // Player health.
   int _health = 100;
   int get health => _health;
@@ -34,8 +31,11 @@ class Player extends SpriteComponent
   SpaceshipType spaceshipType;
 
   PlayerData? _playerData;
-  int get score => _playerData!.currentScore;
+  int get score => _playerData?.currentScore ?? 0;
   bool get isReady => isMounted && _playerData != null;
+
+  /// Score from kills before [setPlayerData] runs (first frames after attach).
+  int _pendingScoreAward = 0;
 
   // If true, player will shoot 3 bullets at a time.
   bool _shootMultipleBullets = false;
@@ -54,7 +54,6 @@ class Player extends SpriteComponent
   }
 
   Player({
-    required this.joystick,
     required this.spaceshipType,
     super.sprite,
     super.position,
@@ -159,10 +158,6 @@ class Player extends SpriteComponent
     // Delta time is the time elapsed since last update. For devices with higher frame rates, delta time
     // will be smaller and for devices with lower frame rates, it will be larger. Multiplying speed with
     // delta time ensure that player speed remains same irrespective of the device FPS.
-    if (!joystick.delta.isZero()) {
-      position.add(joystick.relativeDelta * _spaceship.speed * dt);
-    }
-
     if (!keyboardDelta.isZero()) {
       position.add(keyboardDelta * _spaceship.speed * dt);
     }
@@ -190,10 +185,21 @@ class Player extends SpriteComponent
     game.world.add(particleComponent);
   }
 
+  // Applies touch swipe delta directly to player's position.
+  void moveBySwipeDelta(Vector2 delta) {
+    position.add(delta);
+    position.clamp(Vector2.zero() + size / 2, game.fixedResolution - size / 2);
+  }
+
   void setPlayerData(PlayerData playerData) {
     _playerData = playerData;
     // Update the current spaceship type of player.
     _setSpaceshipType(playerData.spaceshipType);
+    if (_pendingScoreAward != 0) {
+      final pending = _pendingScoreAward;
+      _pendingScoreAward = 0;
+      addToScore(pending);
+    }
   }
 
   void joystickAction() {
@@ -239,6 +245,10 @@ class Player extends SpriteComponent
   // Adds given points to player score
   /// and also add it to [PlayerData.money].
   void addToScore(int points) {
+    if (_playerData == null) {
+      _pendingScoreAward += points;
+      return;
+    }
     _playerData!.currentScore += points;
     _playerData!.money += points;
 
@@ -258,7 +268,10 @@ class Player extends SpriteComponent
   // Resets player score, health and position. Should be called
   // while restarting and exiting the game.
   void reset() {
-    _playerData!.currentScore = 0;
+    _pendingScoreAward = 0;
+    if (_playerData != null) {
+      _playerData!.currentScore = 0;
+    }
     _health = 100;
     position = game.fixedResolution / 2;
   }

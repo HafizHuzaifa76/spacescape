@@ -2,13 +2,10 @@ import 'dart:math';
 
 import 'package:flame/sprite.dart';
 import 'package:flame/components.dart';
-import 'package:provider/provider.dart';
-
 import 'game.dart';
 import 'enemy.dart';
 
 import '../models/enemy_data.dart';
-import '../models/player_data.dart';
 
 // This component class takes care of spawning new enemy components
 // randomly from top of the screen. It uses the HasGameReference mixin so that
@@ -53,33 +50,27 @@ class EnemyManager extends Component with HasGameReference<SpacescapeGame> {
       game.fixedResolution - initialSize / 2,
     );
 
-    // Make sure that we have a valid BuildContext before using it.
-    if (game.buildContext != null) {
-      // Get current score and figure out the max level of enemy that
-      // can be spawned for this score.
-      int currentScore = Provider.of<PlayerData>(
-        game.buildContext!,
-        listen: false,
-      ).currentScore;
-      int maxLevel = mapScoreToMaxEnemyLevel(currentScore);
+    // Get current score and figure out the max level of enemy that
+    // can be spawned for this score (always spawn; do not gate on BuildContext).
+    final currentScore = game.currentScoreForEnemySpawning;
+    final maxLevel = mapScoreToMaxEnemyLevel(currentScore);
 
-      /// Gets a random [EnemyData] object from the list.
-      final enemyData = _enemyDataList.elementAt(random.nextInt(maxLevel * 4));
+    /// Gets a random [EnemyData] object from the list.
+    final enemyData = _enemyDataList.elementAt(random.nextInt(maxLevel * 4));
 
-      Enemy enemy = Enemy(
-        sprite: spriteSheet.getSpriteById(enemyData.spriteId),
-        size: initialSize,
-        position: position,
-        enemyData: enemyData,
-      );
+    final enemy = Enemy(
+      sprite: spriteSheet.getSpriteById(enemyData.spriteId),
+      size: initialSize,
+      position: position,
+      enemyData: enemyData,
+    );
 
-      // Makes sure that the enemy sprite is centered.
-      enemy.anchor = Anchor.center;
+    // Makes sure that the enemy sprite is centered.
+    enemy.anchor = Anchor.center;
 
-      // Add it to components list of game instance, instead of EnemyManager.
-      // This ensures the collision detection working correctly.
-      game.world.add(enemy);
-    }
+    // Add it to components list of game instance, instead of EnemyManager.
+    // This ensures the collision detection working correctly.
+    game.world.add(enemy);
   }
 
   // For a given score, this method returns a max level

@@ -81,18 +81,6 @@ class SpacescapeGame extends FlameGame
 
       await add(world);
 
-      // Create a basic joystick component on left.
-      final joystick = JoystickComponent(
-        anchor: Anchor.bottomLeft,
-        position: Vector2(30, fixedResolution.y - 30),
-        // size: 100,
-        background: CircleComponent(
-          radius: 60,
-          paint: Paint()..color = Colors.white.withValues(alpha: 0.5),
-        ),
-        knob: CircleComponent(radius: 30),
-      );
-
       camera = CameraComponent.withFixedResolution(
         world: world,
         width: fixedResolution.x,
@@ -116,7 +104,6 @@ class SpacescapeGame extends FlameGame
       final spaceship = Spaceship.getSpaceshipByType(spaceshipType);
 
       _player = Player(
-        joystick: joystick,
         spaceshipType: spaceshipType,
         sprite: spriteSheet.getSpriteById(spaceship.spriteId),
         size: Vector2(64, 64),
@@ -187,7 +174,6 @@ class SpacescapeGame extends FlameGame
 
       camera.backdrop.add(stars);
       camera.viewport.addAll([
-        joystick,
         button,
         healthBar,
         _playerScore,
@@ -200,14 +186,53 @@ class SpacescapeGame extends FlameGame
     }
   }
 
+  // Moves the player by current swipe delta from the gameplay screen.
+  void movePlayerBySwipe(Offset delta) {
+    if (!_isAlreadyLoaded || !_player.isMounted || !hasLayout) {
+      return;
+    }
+    // Gesture deltas are in Flutter layout pixels; world uses [fixedResolution].
+    final canvas = canvasSize;
+    if (canvas.x <= 0 || canvas.y <= 0) {
+      return;
+    }
+    final scaleX = fixedResolution.x / canvas.x;
+    final scaleY = fixedResolution.y / canvas.y;
+    _player.moveBySwipeDelta(
+      Vector2(delta.dx * scaleX, delta.dy * scaleY),
+    );
+  }
+
+  /// Score used for enemy difficulty (Provider when attached, else in-game score).
+  int get currentScoreForEnemySpawning {
+    if (buildContext != null) {
+      try {
+        return Provider.of<PlayerData>(buildContext!, listen: false)
+            .currentScore;
+      } on ProviderNotFoundException {
+        // No Provider above this context (e.g. tests); fall through.
+      }
+    }
+    return _player.score;
+  }
+
+  /// Idempotent: call from Flutter when [PlayerData] is available above the game.
+  void syncPlayerData(PlayerData playerData) {
+    _player.setPlayerData(playerData);
+  }
+
   // This method gets called when game instance gets attached
   // to Flutter's widget tree.
   @override
   void onAttach() {
     if (buildContext != null) {
-      // Get the PlayerData from current build context without registering a listener.
-      final playerData = Provider.of<PlayerData>(buildContext!, listen: false);
-      _player.setPlayerData(playerData);
+      try {
+        final playerData =
+            Provider.of<PlayerData>(buildContext!, listen: false);
+        _player.setPlayerData(playerData);
+      } on ProviderNotFoundException {
+        // [GamePlay] calls [syncPlayerData] after the first frame when needed.
+      }
     }
     _audioPlayerComponent.playBgm('9. Space Invaders.wav');
     super.onAttach();
@@ -266,10 +291,12 @@ class SpacescapeGame extends FlameGame
     _commandList.addAll(_addLaterCommandList);
     _addLaterCommandList.clear();
 
-    if (isAttached && _player.isReady) {
-      // Update score and health components with latest values.
-      _playerScore.text = 'Score: ${_player.score}';
+    if (isAttached) {
+      // Health is local to [Player]; always reflect it (not gated on PlayerData).
       _playerHealth.text = 'Health: ${_player.health}%';
+      if (_player.isReady) {
+        _playerScore.text = 'Score: ${_player.score}';
+      }
 
       /// Display [GameOverMenu] when [Player.health] becomes
       /// zero and camera stops shaking.
